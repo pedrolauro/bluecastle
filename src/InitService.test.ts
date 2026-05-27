@@ -29,6 +29,7 @@ const codexAgent = getAgent("codex")!;
 const cursorAgent = getAgent("cursor")!;
 const opencodeAgent = getAgent("opencode")!;
 const copilotAgent = getAgent("copilot")!;
+const kiroAgent = getAgent("kiro")!;
 
 const defaultOptions: ScaffoldOptions = {
   agent: claudeCodeAgent,
@@ -91,6 +92,12 @@ describe("InitService scaffold", () => {
     {
       agent: cursorAgent,
       expectedKey: "CURSOR_API_KEY=",
+      unexpectedKey: "ANTHROPIC_API_KEY=",
+      expectClaudeSetupTokenHint: false,
+    },
+    {
+      agent: kiroAgent,
+      expectedKey: "KIRO_API_KEY=",
       unexpectedKey: "ANTHROPIC_API_KEY=",
       expectClaudeSetupTokenHint: false,
     },
@@ -869,6 +876,34 @@ describe("InitService scaffold", () => {
       "utf-8",
     );
     expect(mainTs).toContain('cursor("claude-sonnet-4-6")');
+    expect(mainTs).not.toContain("claudeCode");
+  });
+
+  it("scaffolds kiro agent with kiro Dockerfile", async () => {
+    const dir = await makeDir();
+    await runScaffold(dir, { agent: kiroAgent, model: "auto" });
+
+    const dockerfile = await readFile(
+      join(dir, ".sandcastle", "Dockerfile"),
+      "utf-8",
+    );
+    expect(dockerfile).toContain("FROM node:22-bookworm");
+    expect(dockerfile).toContain("cli.kiro.dev/install");
+    expect(dockerfile).toContain('ENV PATH="/home/agent/.local/bin:$PATH"');
+    expect(dockerfile).toContain("ARG AGENT_UID=1000");
+    expect(dockerfile).toContain("ARG AGENT_GID=1000");
+    expect(dockerfile).not.toContain("{{ISSUE_TRACKER_TOOLS}}");
+  });
+
+  it("scaffolds main.mts with kiro factory import when kiro agent selected", async () => {
+    const dir = await makeDir();
+    await runScaffold(dir, { agent: kiroAgent, model: "auto" });
+
+    const mainTs = await readFile(
+      join(dir, ".sandcastle", "main.mts"),
+      "utf-8",
+    );
+    expect(mainTs).toContain('kiro("auto")');
     expect(mainTs).not.toContain("claudeCode");
   });
 

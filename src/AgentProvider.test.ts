@@ -7,6 +7,7 @@ import {
   codex,
   copilot,
   cursor,
+  kiro,
   opencode,
   pi,
 } from "./AgentProvider.js";
@@ -2103,6 +2104,272 @@ describe("captureSessions flag", () => {
 
   it("cursor has captureSessions false", () => {
     expect(cursor("cursor-model").captureSessions).toBe(false);
+  });
+
+  it("kiro has captureSessions false", () => {
+    expect(kiro("auto").captureSessions).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// kiro factory
+// ---------------------------------------------------------------------------
+
+describe("kiro factory", () => {
+  it("returns a provider with name 'kiro'", () => {
+    const provider = kiro("auto");
+    expect(provider.name).toBe("kiro");
+  });
+
+  it("does not expose envManifest or dockerfileTemplate", () => {
+    const provider = kiro("auto");
+    expect(provider).not.toHaveProperty("envManifest");
+    expect(provider).not.toHaveProperty("dockerfileTemplate");
+  });
+
+  it("buildPrintCommand starts a non-interactive chat with the model", () => {
+    const provider = kiro("claude-sonnet-4-5");
+    const { command } = provider.buildPrintCommand(opts("do something"));
+    expect(command).toContain("kiro-cli chat --no-interactive");
+    expect(command).toContain("--model 'claude-sonnet-4-5'");
+  });
+
+  it("buildPrintCommand delivers prompt via argv, not stdin", () => {
+    const provider = kiro("auto");
+    const { command, stdin } = provider.buildPrintCommand(opts("hi there"));
+    expect(command).toContain("'hi there'");
+    expect(stdin).toBeUndefined();
+  });
+
+  it("buildPrintCommand shell-escapes the model and prompt", () => {
+    const provider = kiro("auto");
+    const { command } = provider.buildPrintCommand(opts("it's a test"));
+    expect(command).toContain("--model 'auto'");
+    expect(command).toContain("'it'\\''s a test'");
+  });
+
+  it("buildPrintCommand includes --trust-all-tools when dangerouslySkipPermissions is true", () => {
+    const provider = kiro("auto");
+    const { command } = provider.buildPrintCommand({
+      prompt: "test",
+      dangerouslySkipPermissions: true,
+    });
+    expect(command).toContain("--trust-all-tools");
+  });
+
+  it("buildPrintCommand omits --trust-all-tools when dangerouslySkipPermissions is false", () => {
+    const provider = kiro("auto");
+    const { command } = provider.buildPrintCommand({
+      prompt: "test",
+      dangerouslySkipPermissions: false,
+    });
+    expect(command).not.toContain("--trust-all-tools");
+  });
+
+  it("buildPrintCommand emits --trust-tools=CSV when trustTools is set", () => {
+    const provider = kiro("auto", { trustTools: ["fs_read", "fs_write"] });
+    const { command } = provider.buildPrintCommand({
+      prompt: "test",
+      dangerouslySkipPermissions: false,
+    });
+    expect(command).toContain("--trust-tools='fs_read,fs_write'");
+  });
+
+  it("buildPrintCommand emits --trust-tools= for empty trustTools (trust none)", () => {
+    const provider = kiro("auto", { trustTools: [] });
+    const { command } = provider.buildPrintCommand({
+      prompt: "test",
+      dangerouslySkipPermissions: false,
+    });
+    expect(command).toContain("--trust-tools=''");
+  });
+
+  it("buildPrintCommand throws when trustTools is combined with dangerouslySkipPermissions", () => {
+    const provider = kiro("auto", { trustTools: ["fs_read"] });
+    expect(() =>
+      provider.buildPrintCommand({
+        prompt: "test",
+        dangerouslySkipPermissions: true,
+      }),
+    ).toThrow(/trustTools cannot be combined with dangerouslySkipPermissions/);
+  });
+
+  it("buildPrintCommand emits --agent-engine when agentEngine is set", () => {
+    const provider = kiro("auto", { agentEngine: "kas" });
+    const { command } = provider.buildPrintCommand(opts("test"));
+    expect(command).toContain("--agent-engine 'kas'");
+  });
+
+  it("buildPrintCommand emits --mode when mode is set with agentEngine=kas", () => {
+    const provider = kiro("auto", { agentEngine: "kas", mode: "spec" });
+    const { command } = provider.buildPrintCommand(opts("test"));
+    expect(command).toContain("--agent-engine 'kas'");
+    expect(command).toContain("--mode 'spec'");
+  });
+
+  it("buildPrintCommand throws when mode is set without agentEngine=kas", () => {
+    const provider = kiro("auto", { mode: "spec" });
+    expect(() => provider.buildPrintCommand(opts("test"))).toThrow(
+      /mode requires agentEngine: 'kas'/,
+    );
+  });
+
+  it("buildPrintCommand throws when mode is set with agentEngine=v2", () => {
+    const provider = kiro("auto", { agentEngine: "v2", mode: "vibe" });
+    expect(() => provider.buildPrintCommand(opts("test"))).toThrow(
+      /mode requires agentEngine: 'kas'/,
+    );
+  });
+
+  it("buildPrintCommand emits --agent when agent profile is set", () => {
+    const provider = kiro("auto", { agent: "reviewer" });
+    const { command } = provider.buildPrintCommand(opts("test"));
+    expect(command).toContain("--agent 'reviewer'");
+  });
+
+  it("buildPrintCommand emits --require-mcp-startup when requested", () => {
+    const provider = kiro("auto", { requireMcpStartup: true });
+    const { command } = provider.buildPrintCommand(opts("test"));
+    expect(command).toContain("--require-mcp-startup");
+  });
+
+  it("buildPrintCommand throws when prompt exceeds 30 KiB", () => {
+    const provider = kiro("auto");
+    const huge = "x".repeat(31 * 1024);
+    expect(() => provider.buildPrintCommand(opts(huge))).toThrow(
+      /Kiro print-mode prompt is \d+ bytes/,
+    );
+  });
+
+  it("buildPrintCommand bakes model into each provider instance independently", () => {
+    const a = kiro("model-a");
+    const b = kiro("model-b");
+    expect(a.buildPrintCommand(opts("t")).command).toContain("model-a");
+    expect(b.buildPrintCommand(opts("t")).command).toContain("model-b");
+    expect(a.buildPrintCommand(opts("t")).command).not.toContain("model-b");
+  });
+
+  it("accepts an env option and exposes it on the provider", () => {
+    const provider = kiro("auto", { env: { KIRO_API_KEY: "k-test" } });
+    expect(provider.env).toEqual({ KIRO_API_KEY: "k-test" });
+  });
+
+  it("defaults env to empty object when not provided", () => {
+    expect(kiro("auto").env).toEqual({});
+  });
+
+  it("buildInteractiveArgs builds kiro-cli chat with model and prompt", () => {
+    const provider = kiro("auto");
+    const args = provider.buildInteractiveArgs!({
+      prompt: "hello",
+      dangerouslySkipPermissions: false,
+    });
+    expect(args).toEqual(["kiro-cli", "chat", "--model", "auto", "hello"]);
+  });
+
+  it("buildInteractiveArgs omits --no-interactive (interactive mode launches TUI)", () => {
+    const args = kiro("auto").buildInteractiveArgs!({
+      prompt: "",
+      dangerouslySkipPermissions: false,
+    });
+    expect(args).not.toContain("--no-interactive");
+  });
+
+  it("buildInteractiveArgs includes --trust-all-tools when requested", () => {
+    const args = kiro("auto").buildInteractiveArgs!({
+      prompt: "",
+      dangerouslySkipPermissions: true,
+    });
+    expect(args).toContain("--trust-all-tools");
+  });
+
+  it("buildInteractiveArgs ignores trustTools (TTY prompts for approval)", () => {
+    const args = kiro("auto", { trustTools: ["fs_read"] })
+      .buildInteractiveArgs!({
+      prompt: "",
+      dangerouslySkipPermissions: false,
+    });
+    expect(args).not.toContain("--trust-tools");
+    expect(args.some((a) => a.startsWith("--trust-tools"))).toBe(false);
+  });
+
+  it("buildInteractiveArgs throws when mode is set without agentEngine=kas", () => {
+    const provider = kiro("auto", { mode: "spec" });
+    expect(() =>
+      provider.buildInteractiveArgs!({
+        prompt: "",
+        dangerouslySkipPermissions: false,
+      }),
+    ).toThrow(/mode requires agentEngine: 'kas'/);
+  });
+
+  it("parseStreamLine emits text and result for '> ' prefixed lines", () => {
+    const provider = kiro("auto");
+    expect(provider.parseStreamLine("> pong")).toEqual([
+      { type: "text", text: "pong" },
+      { type: "result", result: "pong" },
+    ]);
+  });
+
+  it("parseStreamLine strips ANSI before matching prefixes", () => {
+    const provider = kiro("auto");
+    const line = "\x1b[32m> hello\x1b[0m";
+    expect(provider.parseStreamLine(line)).toEqual([
+      { type: "text", text: "hello" },
+      { type: "result", result: "hello" },
+    ]);
+  });
+
+  it("parseStreamLine skips the trust banner and resets accumulated result", () => {
+    const provider = kiro("auto");
+    expect(provider.parseStreamLine("> first")).toEqual([
+      { type: "text", text: "first" },
+      { type: "result", result: "first" },
+    ]);
+    expect(
+      provider.parseStreamLine(
+        "\x1b[32mAll tools are now trusted (\x1b[0m\x1b[31m!\x1b[0m\x1b[32m).\x1b[0m",
+      ),
+    ).toEqual([]);
+    // After banner, the buffer resets — next "> " line starts fresh
+    expect(provider.parseStreamLine("> second")).toEqual([
+      { type: "text", text: "second" },
+      { type: "result", result: "second" },
+    ]);
+  });
+
+  it("parseStreamLine skips Kiro banner companions and footer", () => {
+    const provider = kiro("auto");
+    expect(
+      provider.parseStreamLine("Agents can sometimes do unexpected things"),
+    ).toEqual([]);
+    expect(provider.parseStreamLine("Learn more at https://kiro.dev/")).toEqual(
+      [],
+    );
+    expect(provider.parseStreamLine(" ▸ Credits: 0.02 • Time: 2s")).toEqual([]);
+  });
+
+  it("parseStreamLine accumulates multi-line assistant text in the result buffer", () => {
+    const provider = kiro("auto");
+    provider.parseStreamLine("> line one");
+    const second = provider.parseStreamLine("> line two");
+    expect(second).toEqual([
+      { type: "text", text: "line two" },
+      { type: "result", result: "line one\nline two" },
+    ]);
+  });
+
+  it("parseStreamLine returns empty array for blank lines", () => {
+    const provider = kiro("auto");
+    expect(provider.parseStreamLine("")).toEqual([]);
+    expect(provider.parseStreamLine("   ")).toEqual([]);
+  });
+
+  it("parseStreamLine surfaces unknown content as text without folding into result", () => {
+    const provider = kiro("auto");
+    provider.parseStreamLine("> seed");
+    const events = provider.parseStreamLine("some unrecognised noise");
+    expect(events).toEqual([{ type: "text", text: "some unrecognised noise" }]);
   });
 });
 

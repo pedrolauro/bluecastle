@@ -1265,3 +1265,240 @@ export const claudeCode = (
     return undefined;
   },
 });
+
+// ---------------------------------------------------------------------------
+// Kiro CLI agent provider
+// ---------------------------------------------------------------------------
+
+/**
+ * Kiro headless mode (`kiro-cli chat --no-interactive`) takes the prompt as a
+ * positional argv argument. Stay well under CreateProcess' ~32 KiB
+ * lpCommandLine cap on Windows (Kiro ships there) so users get a clear error
+ * instead of an opaque spawn failure.
+ */
+const KIRO_PRINT_PROMPT_MAX_BYTES = 30 * 1024;
+
+function assertKiroPrintPromptFitsArgv(prompt: string): void {
+  const n = Buffer.byteLength(prompt, "utf8");
+  if (n > KIRO_PRINT_PROMPT_MAX_BYTES) {
+    throw new Error(
+      `Kiro print-mode prompt is ${n} bytes (max ${KIRO_PRINT_PROMPT_MAX_BYTES} bytes). The Kiro CLI accepts the prompt only as a command-line argument and Windows CreateProcess caps the command line at ~32 KiB; shorten the prompt or split the work.`,
+    );
+  }
+}
+
+/** CSI/SGR escape sequences emitted by Kiro's renderer (colors, links). */
+const ANSI_ESCAPE_RE =
+  // eslint-disable-next-line no-control-regex
+  /\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
+
+const stripAnsi = (s: string): string => s.replace(ANSI_ESCAPE_RE, "");
+
+/**
+ * Parse one line of Kiro CLI headless stdout.
+ *
+ * Headless Kiro does NOT emit structured JSON (no `--output-format` for chat
+ * as of 2026-05-27 — only `--list-models --format json`). Output is plain
+ * text with ANSI color codes and decorations:
+ *
+ *   \x1b[32mAll tools are now trusted (\x1b[0m\x1b[31m!\x1b[0m\x1b[32m)...   ← trust banner
+ *   Agents can sometimes do unexpected things ...
+ *   Learn more at https://kiro.dev/docs/cli/chat/security/...
+ *                                                                            ← blank
+ *   > pong                                                                   ← assistant text (one line per chunk)
+ *                                                                            ← blank
+ *   ▸ Credits: 0.02 • Time: 2s                                               ← footer / usage
+ *
+ * This parser is heuristic: any Kiro release that reshapes these prefixes
+ * will silently regress text/result extraction. Revisit when Kiro publishes
+ * a structured headless output format.
+ *
+ * The state argument carries result accumulation across lines for a single
+ * provider instance. The trust banner resets it so that subsequent
+ * iterations (which re-emit the banner) start with a clean buffer. Without
+ * `dangerouslySkipPermissions`, no banner appears and state carries across
+ * iterations — an acceptable limitation for v1.
+ */
+const parseKiroStreamLine = (
+  state: { result: string },
+  line: string,
+): ParsedStreamEvent[] => {
+  const stripped = stripAnsi(line);
+
+  // Trust banner — first line of each --trust-all-tools invocation. Use it as
+  // an iteration boundary to reset the accumulated result buffer.
+  if (stripped.startsWith("All tools are now trusted")) {
+    state.result = "";
+    return [];
+  }
+  // Banner companions — silently skip.
+  if (
+    stripped.startsWith("Agents can sometimes do") ||
+    stripped.startsWith("Learn more at")
+  ) {
+    return [];
+  }
+  // Footer ("▸ Credits: ..." / "▸ Time: ...") — skip. Usage parsing not wired
+  // here because Kiro reports credits, not Sandcastle's token-based
+  // IterationUsage shape.
+  const trimmedStart = stripped.replace(/^\s+/, "");
+  if (
+    trimmedStart.startsWith("▸ Credits:") ||
+    trimmedStart.startsWith("▸ Time:")
+  ) {
+    return [];
+  }
+  // Assistant text lines are prefixed with "> ".
+  if (stripped.startsWith("> ")) {
+    const text = stripped.slice(2);
+    state.result = state.result ? state.result + "\n" + text : text;
+    return [
+      { type: "text", text },
+      { type: "result", result: state.result },
+    ];
+  }
+  // Empty / separator lines — skip.
+  if (!stripped.trim()) return [];
+  // Unknown content — surface as text so the user sees it, but do NOT fold
+  // into the result buffer (avoids polluting downstream consumers).
+  return [{ type: "text", text: stripped }];
+};
+
+/** Options for the Kiro CLI agent provider. */
+export interface KiroOptions {
+  /**
+   * Environment variables injected by this agent provider.
+   *
+   * `KIRO_API_KEY` is typically supplied via `.sandcastle/.env` (resolved
+   * automatically); this `env` is an escape hatch for additional non-secret
+   * configuration.
+   */
+  readonly env?: Record<string, string>;
+  /**
+   * Kiro agent engine. Defaults to `v2` server-side. Pass `kas` to enable
+   * the KAS agent (required to use `mode`).
+   */
+  readonly agentEngine?: "v1" | "v2" | "kas";
+  /**
+   * KAS-only mode. `vibe` is the Kiro default; `spec` follows a specification.
+   * Requires `agentEngine: "kas"` — combining `mode` with any other engine
+   * throws at command-build time.
+   */
+  readonly mode?: "vibe" | "spec";
+  /** Kiro context profile to use (`--agent` flag). */
+  readonly agent?: string;
+  /**
+   * Restrict tool auto-approval to this allowlist (e.g. `["fs_read",
+   * "fs_write"]`). Cannot be combined with `dangerouslySkipPermissions:
+   * true` — the call throws at command-build time. Empty array means
+   * "trust no tools" (Kiro semantics for `--trust-tools=`).
+   */
+  readonly trustTools?: readonly string[];
+  /**
+   * Require all enabled MCP servers to start successfully; Kiro exits with
+   * code 3 if any fail.
+   */
+  readonly requireMcpStartup?: boolean;
+}
+
+export const kiro = (model: string, options?: KiroOptions): AgentProvider => {
+  // Parser state lives in the closure so that each kiro(...) call gets its
+  // own buffer. Reset on the trust banner (start of each --trust-all-tools
+  // iteration). See parseKiroStreamLine for limitations.
+  const parserState = { result: "" };
+
+  const trustFlag = (dangerouslySkipPermissions: boolean): string => {
+    if (dangerouslySkipPermissions && options?.trustTools !== undefined) {
+      throw new Error(
+        "KiroOptions.trustTools cannot be combined with dangerouslySkipPermissions: true — these map to mutually exclusive Kiro flags (--trust-all-tools vs --trust-tools).",
+      );
+    }
+    if (dangerouslySkipPermissions) return " --trust-all-tools";
+    if (options?.trustTools !== undefined) {
+      return ` --trust-tools=${shellEscape(options.trustTools.join(","))}`;
+    }
+    return "";
+  };
+
+  const engineFlag = (): string => {
+    if (options?.mode !== undefined && options.agentEngine !== "kas") {
+      throw new Error(
+        "KiroOptions.mode requires agentEngine: 'kas' — Kiro's --mode flag only applies to the KAS agent engine.",
+      );
+    }
+    const parts: string[] = [];
+    if (options?.agentEngine) {
+      parts.push(` --agent-engine ${shellEscape(options.agentEngine)}`);
+    }
+    if (options?.mode) {
+      parts.push(` --mode ${shellEscape(options.mode)}`);
+    }
+    return parts.join("");
+  };
+
+  const profileFlag = (): string =>
+    options?.agent ? ` --agent ${shellEscape(options.agent)}` : "";
+
+  const mcpFlag = (): string =>
+    options?.requireMcpStartup ? " --require-mcp-startup" : "";
+
+  return {
+    name: "kiro",
+    env: options?.env ?? {},
+    // Kiro CLI persists sessions ONLY in interactive mode at
+    // ~/.kiro/sessions/cli/{uuid}.{json,jsonl,lock} — flat, file-based,
+    // transferable host↔sandbox (unlike Copilot's SQLite-backed store; see
+    // ADR 0016). Headless mode (--no-interactive) does NOT write a session
+    // file (observed 2026-05-27), so resume cannot be wired here. When Kiro
+    // exposes a way to persist headless runs (e.g. --session-id or
+    // --persist-session), revisit. Watch out for the `cwd` field recorded
+    // inside the session JSON — host and sandbox cwds differ, so a naive
+    // file transfer may fail or be filtered out by `--list-sessions` (which
+    // scopes by current directory); cwd rewriting like Claude Code's
+    // projectsDir remap will likely be needed.
+    captureSessions: false,
+
+    buildPrintCommand({
+      prompt,
+      dangerouslySkipPermissions,
+    }: AgentCommandOptions): PrintCommand {
+      assertKiroPrintPromptFitsArgv(prompt);
+      const trust = trustFlag(dangerouslySkipPermissions);
+      const engine = engineFlag();
+      const profile = profileFlag();
+      const mcp = mcpFlag();
+      return {
+        command: `kiro-cli chat --no-interactive --model ${shellEscape(model)}${engine}${profile}${trust}${mcp} ${shellEscape(prompt)}`,
+      };
+    },
+
+    buildInteractiveArgs({
+      prompt,
+      dangerouslySkipPermissions,
+    }: AgentCommandOptions): string[] {
+      // Interactive mode runs against a real TTY — let Kiro prompt the user
+      // for tool approvals rather than wiring trustTools' granular allowlist
+      // here. Only the broad --trust-all-tools opt-out is honoured.
+      const args = ["kiro-cli", "chat", "--model", model];
+      if (options?.agentEngine)
+        args.push("--agent-engine", options.agentEngine);
+      if (options?.mode) {
+        if (options.agentEngine !== "kas") {
+          throw new Error(
+            "KiroOptions.mode requires agentEngine: 'kas' — Kiro's --mode flag only applies to the KAS agent engine.",
+          );
+        }
+        args.push("--mode", options.mode);
+      }
+      if (options?.agent) args.push("--agent", options.agent);
+      if (dangerouslySkipPermissions) args.push("--trust-all-tools");
+      if (options?.requireMcpStartup) args.push("--require-mcp-startup");
+      if (prompt) args.push(prompt);
+      return args;
+    },
+
+    parseStreamLine(line: string): ParsedStreamEvent[] {
+      return parseKiroStreamLine(parserState, line);
+    },
+  };
+};

@@ -831,27 +831,27 @@ Removes the Podman image.
 
 ### `RunOptions`
 
-| Option                     | Type               | Default                       | Description                                                                                                                                                                                                                  |
-| -------------------------- | ------------------ | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent`                    | AgentProvider      | —                             | **Required.** Agent provider (e.g. `claudeCode("claude-opus-4-8")`, `pi("claude-sonnet-4-6")`, `codex("gpt-5.4")`, `cursor("composer-2")`, `opencode("opencode/big-pickle")`, `copilot("claude-sonnet-4.5")`)                |
-| `sandbox`                  | SandboxProvider    | —                             | **Required.** Sandbox provider (e.g. `docker()`, `podman()`, `docker({ imageName: "sandcastle:local" })`)                                                                                                                    |
-| `cwd`                      | string             | `process.cwd()`               | Host repo directory — anchor for `.sandcastle/` artifacts and git operations. Relative paths resolve against `process.cwd()`.                                                                                                |
-| `prompt`                   | string             | —                             | Inline prompt (mutually exclusive with `promptFile`)                                                                                                                                                                         |
-| `promptFile`               | string             | —                             | Path to prompt file (mutually exclusive with `prompt`). Resolves against `process.cwd()`, **not** `cwd`.                                                                                                                     |
-| `maxIterations`            | number             | `1`                           | Maximum iterations to run                                                                                                                                                                                                    |
-| `hooks`                    | SandboxHooks       | —                             | Lifecycle hooks (`host.*`, `sandbox.*`)                                                                                                                                                                                      |
-| `name`                     | string             | —                             | Display name for the run, shown as a prefix in log output                                                                                                                                                                    |
-| `promptArgs`               | PromptArgs         | —                             | Key-value map for `{{KEY}}` placeholder substitution                                                                                                                                                                         |
-| `branchStrategy`           | BranchStrategy     | per-provider default          | Branch strategy: `{ type: 'head' }`, `{ type: 'merge-to-head' }`, or `{ type: 'branch', branch: '…' }`                                                                                                                       |
-| `copyToWorktree`           | string[]           | —                             | Host-relative file paths to copy into the sandbox before start (not supported with `branchStrategy: { type: 'head' }`)                                                                                                       |
-| `logging`                  | object             | file (auto-generated)         | `{ type: 'file', path }` or `{ type: 'stdout' }`                                                                                                                                                                             |
-| `completionSignal`         | string \| string[] | `<promise>COMPLETE</promise>` | String or array of strings the agent emits to stop the iteration loop early                                                                                                                                                  |
-| `idleTimeoutSeconds`       | number             | `600`                         | Idle timeout in seconds — resets on each agent output event                                                                                                                                                                  |
-| `completionTimeoutSeconds` | number             | `60`                          | Grace window in seconds after the completion signal is observed but the agent process has not exited (hanging process). See [Hanging processes after the completion signal](#hanging-processes-after-the-completion-signal). |
-| `resumeSession`            | string             | —                             | Resume a prior session by ID for agents that support resume. Incompatible with `maxIterations > 1`. Session file must exist on host.                                                                                         |
-| `signal`                   | AbortSignal        | —                             | Cancel the run when aborted. Kills the in-flight agent subprocess and cancels lifecycle hooks; the worktree is preserved on disk. Rejects with `signal.reason`.                                                              |
-| `timeouts`                 | Timeouts           | —                             | Override default timeouts for built-in lifecycle steps: `copyToWorktreeMs` (60 000), `gitSetupMs` (10 000), `commitCollectionMs` (30 000), `mergeToHostMs` (30 000).                                                         |
-| `output`                   | OutputDefinition   | —                             | Structured output definition (`Output.object(…)` or `Output.string(…)`). Requires `maxIterations === 1`. See [Structured output](#structured-output).                                                                        |
+| Option                     | Type               | Default                       | Description                                                                                                                                                                                                                   |
+| -------------------------- | ------------------ | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent`                    | AgentProvider      | —                             | **Required.** Agent provider (e.g. `claudeCode("claude-opus-4-8")`, `pi("claude-sonnet-4-6")`, `codex("gpt-5.4")`, `cursor("composer-2")`, `opencode("opencode/big-pickle")`, `copilot("claude-sonnet-4.5")`, `kiro("auto")`) |
+| `sandbox`                  | SandboxProvider    | —                             | **Required.** Sandbox provider (e.g. `docker()`, `podman()`, `docker({ imageName: "sandcastle:local" })`)                                                                                                                     |
+| `cwd`                      | string             | `process.cwd()`               | Host repo directory — anchor for `.sandcastle/` artifacts and git operations. Relative paths resolve against `process.cwd()`.                                                                                                 |
+| `prompt`                   | string             | —                             | Inline prompt (mutually exclusive with `promptFile`)                                                                                                                                                                          |
+| `promptFile`               | string             | —                             | Path to prompt file (mutually exclusive with `prompt`). Resolves against `process.cwd()`, **not** `cwd`.                                                                                                                      |
+| `maxIterations`            | number             | `1`                           | Maximum iterations to run                                                                                                                                                                                                     |
+| `hooks`                    | SandboxHooks       | —                             | Lifecycle hooks (`host.*`, `sandbox.*`)                                                                                                                                                                                       |
+| `name`                     | string             | —                             | Display name for the run, shown as a prefix in log output                                                                                                                                                                     |
+| `promptArgs`               | PromptArgs         | —                             | Key-value map for `{{KEY}}` placeholder substitution                                                                                                                                                                          |
+| `branchStrategy`           | BranchStrategy     | per-provider default          | Branch strategy: `{ type: 'head' }`, `{ type: 'merge-to-head' }`, or `{ type: 'branch', branch: '…' }`                                                                                                                        |
+| `copyToWorktree`           | string[]           | —                             | Host-relative file paths to copy into the sandbox before start (not supported with `branchStrategy: { type: 'head' }`)                                                                                                        |
+| `logging`                  | object             | file (auto-generated)         | `{ type: 'file', path }` or `{ type: 'stdout' }`                                                                                                                                                                              |
+| `completionSignal`         | string \| string[] | `<promise>COMPLETE</promise>` | String or array of strings the agent emits to stop the iteration loop early                                                                                                                                                   |
+| `idleTimeoutSeconds`       | number             | `600`                         | Idle timeout in seconds — resets on each agent output event                                                                                                                                                                   |
+| `completionTimeoutSeconds` | number             | `60`                          | Grace window in seconds after the completion signal is observed but the agent process has not exited (hanging process). See [Hanging processes after the completion signal](#hanging-processes-after-the-completion-signal).  |
+| `resumeSession`            | string             | —                             | Resume a prior session by ID for agents that support resume. Incompatible with `maxIterations > 1`. Session file must exist on host.                                                                                          |
+| `signal`                   | AbortSignal        | —                             | Cancel the run when aborted. Kills the in-flight agent subprocess and cancels lifecycle hooks; the worktree is preserved on disk. Rejects with `signal.reason`.                                                               |
+| `timeouts`                 | Timeouts           | —                             | Override default timeouts for built-in lifecycle steps: `copyToWorktreeMs` (60 000), `gitSetupMs` (10 000), `commitCollectionMs` (30 000), `mergeToHostMs` (30 000).                                                          |
+| `output`                   | OutputDefinition   | —                             | Structured output definition (`Output.object(…)` or `Output.string(…)`). Requires `maxIterations === 1`. See [Structured output](#structured-output).                                                                         |
 
 ### `RunResult`
 
@@ -996,6 +996,44 @@ agent: pi("claude-sonnet-4-6", { thinking: "high" });
 | `thinking`        | `"off"` \| `"minimal"` \| `"low"` \| `"medium"` \| `"high"` \| `"xhigh"` | —       | Pi reasoning effort level via the `--thinking` flag      |
 | `env`             | `Record<string, string>`                                                 | `{}`    | Environment variables injected by this agent provider    |
 | `captureSessions` | `boolean`                                                                | `true`  | Capture pi session JSONL to host for `pi --session <id>` |
+
+### `KiroOptions`
+
+The `kiro()` factory accepts an optional second argument for provider-specific options:
+
+```typescript
+agent: kiro("auto", { agentEngine: "kas", mode: "spec" });
+```
+
+| Option              | Type                        | Default | Description                                                                                                                                 |
+| ------------------- | --------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `env`               | `Record<string, string>`    | `{}`    | Environment variables injected by this agent provider. Usually unnecessary — supply `KIRO_API_KEY` via `.sandcastle/.env`.                  |
+| `agentEngine`       | `"v1"` \| `"v2"` \| `"kas"` | —       | Kiro agent engine (`--agent-engine`). Pass `kas` to enable the KAS agent (required to use `mode`).                                          |
+| `mode`              | `"vibe"` \| `"spec"`        | —       | KAS-only mode (`--mode`). Combining `mode` with any engine other than `kas` throws at command-build time.                                   |
+| `agent`             | `string`                    | —       | Kiro context profile to use (`--agent`).                                                                                                    |
+| `trustTools`        | `readonly string[]`         | —       | Restrict tool auto-approval to this allowlist (e.g. `["fs_read", "fs_write"]`). Cannot be combined with `dangerouslySkipPermissions: true`. |
+| `requireMcpStartup` | `boolean`                   | `false` | Require all enabled MCP servers to start successfully; Kiro exits with code 3 if any fail.                                                  |
+
+**Model IDs** accepted by the `model` argument (per Kiro's [models reference](https://kiro.dev/docs/cli/models)):
+
+- `auto` (Kiro's model router — recommended for general work)
+- `claude-opus-4.7`, `claude-opus-4.6`, `claude-opus-4.5`
+- `claude-sonnet-4.6`, `claude-sonnet-4.5`, `claude-sonnet-4.0`
+- `claude-haiku-4.5`
+- `deepseek-3.2`
+- `minimax-m2.5`, `minimax-m2.1`
+- `glm-5`
+- `qwen3-coder-next`
+
+Note: Kiro's Claude model IDs use dots (`claude-opus-4.7`), unlike `claudeCode()`'s dashed form (`claude-opus-4-7`). Run `kiro-cli chat --list-models --format json` for the canonical list against your installed CLI.
+
+**Gotchas:**
+
+- Requires a Kiro Pro, Pro+, or Power subscription (see [Kiro headless docs](https://kiro.dev/docs/cli/headless/)).
+- `KIRO_API_KEY` flows via `.sandcastle/.env` like every other provider — you do not need to pass it through `options.env`.
+- **Resume is not supported** for this provider in this release. `kiro-cli` only persists sessions in interactive mode (observed 2026-05-27); headless runs are stateless and `--resume-id` therefore has nothing to resume from.
+- Kiro's headless stdout is plain text with ANSI decorations rather than structured JSON, so Sandcastle's stream parser is heuristic — Kiro CLI releases that reshape the `> ` prefix or the `▸ Credits:` footer can silently regress text/result extraction. File an issue if you see noise in `result`.
+- Kiro does not expose a reasoning-effort flag analogous to Claude Code / Codex / Copilot — `KiroOptions` therefore has no `effort` field.
 
 ### Provider `env`
 
