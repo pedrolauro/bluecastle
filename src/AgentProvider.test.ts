@@ -2115,55 +2115,130 @@ describe("captureSessions flag", () => {
 // kiro factory
 // ---------------------------------------------------------------------------
 
+// Verbatim stream-json lines captured from kiro-cli 2.26.0 with
+// `--agent-engine v3 --output-format stream-json` (2026-09-30 prototype):
+// a run with a shell command, a skill load, two file writes and the
+// completion signal, plus invalid-model and invalid-credential runs.
+const KIRO_RUN_STARTED =
+  '{"type":"runStarted","data":{"payloadSchema":"acp","acpProtocolVersion":1,"engine":"v3"}}';
+const KIRO_TOOL_EXECUTE =
+  '{"type":"sessionUpdate","data":{"sessionId":"sess_d905aa86-3f2c-477d-b9b0-276507a52fab","update":{"sessionUpdate":"tool_call","toolCallId":"run_command_toolu_bdrk_01397hYo7Jrz97HYFYFEwts5","title":"List workspace files with details","kind":"execute","rawInput":{"command":"ls -la","description":"List workspace files with details","cwd":"/work","run_in_background":false},"_meta":{"kiro":{"toolOrigin":"default"}}}}}';
+const KIRO_TOOL_SKILL =
+  '{"type":"sessionUpdate","data":{"sessionId":"sess_d905aa86-3f2c-477d-b9b0-276507a52fab","update":{"sessionUpdate":"tool_call","toolCallId":"toolu_bdrk_01MTEyZTjYDQctKUNKFkbZHz","title":"Load skill: proto-marker","rawInput":{"name":"proto-marker"},"_meta":{"kiro":{"toolOrigin":"acp","toolId":"disclose_context"}}}}}';
+const KIRO_TOOL_WRITE =
+  '{"type":"sessionUpdate","data":{"sessionId":"sess_d905aa86-3f2c-477d-b9b0-276507a52fab","update":{"sessionUpdate":"tool_call","toolCallId":"toolu_bdrk_01KW1a9MHUTXySvvDFjf9bLF","title":"Write File","kind":"edit","status":"in_progress","locations":[{"path":"/work/hello.txt"}],"rawInput":{"path":"/work/hello.txt","text":"oi"},"_meta":{"kiro":{"preview":{"file":"/work/hello.txt","modifiedContent":"oi"},"toolOrigin":"default"}}}}}';
+const KIRO_TOOL_UPDATE =
+  '{"type":"sessionUpdate","data":{"sessionId":"sess_d905aa86-3f2c-477d-b9b0-276507a52fab","update":{"sessionUpdate":"tool_call_update","toolCallId":"run_command_toolu_bdrk_01397hYo7Jrz97HYFYFEwts5","status":"in_progress","rawInput":{"command":"ls -la","description":"List workspace files with details","cwd":"/work","run_in_background":false},"_meta":{"kiro":{"toolOrigin":"default"}}}}}';
+const KIRO_TURN_COMPLETION =
+  '{"type":"sessionUpdate","data":{"sessionId":"sess_d905aa86-3f2c-477d-b9b0-276507a52fab","update":{"sessionUpdate":"session_info_update","_meta":{"kiro":{"promptTurnSummaries":[{"unit":"credit","unitPlural":"credits","usage":0.2820196170978442,"usedTools":["execute_bash","disclose_context","fs_write"]}],"elapsedTime":11374,"status":"success","kind":"turn_completion","requestIds":["18c87d98-8668-41b5-a355-12842a807e0f","9d392869-d306-484b-b337-f0b87a88b69b","f9abdcac-6454-460f-b879-2c50c46c9a70"]}}}}}';
+const KIRO_RUN_FINISHED =
+  '{"type":"runFinished","data":{"sessionId":"sess_d905aa86-3f2c-477d-b9b0-276507a52fab","status":"success","stopReason":"end_turn","finalText":"carimbado\\n\\n<promise>COMPLETE</promise>","finalTextTruncated":false}}';
+const KIRO_BADMODEL_DISPLAYERR =
+  '{"type":"sessionUpdate","data":{"sessionId":"sess_ae12526a-66ff-45e3-8f41-642a4ca3700c","update":{"sessionUpdate":"session_info_update","_meta":{"kiro":{"displayError":{"message":"The selected model is not available. Please select a different model and try again. (Request ID: 99057345-d18c-4733-bc8c-6a0952139b91)","errorType":"InvalidModelError","retryErrorType":"CLIENT_ERROR"},"kind":"display_error","message":"The selected model is not available. Please select a different model and try again. (Request ID: 99057345-d18c-4733-bc8c-6a0952139b91)","errorType":"InvalidModelError","retryErrorType":"CLIENT_ERROR"}}}}}';
+const KIRO_BADMODEL_ERR =
+  '{"type":"runError","data":{"sessionId":"sess_ae12526a-66ff-45e3-8f41-642a4ca3700c","stage":"prompt","message":"The model \'modelo-inexistente\' is not available. Please select a different model and try again. (Request ID: 99057345-d18c-4733-bc8c-6a0952139b91) (code -32000): {\\"errorType\\":\\"InvalidModelError\\",\\"retryErrorType\\":\\"CLIENT_ERROR\\",\\"requestId\\":\\"99057345-d18c-4733-bc8c-6a0952139b91\\"}"}}';
+const KIRO_BADKEY_ERR =
+  '{"type":"runError","data":{"sessionId":"sess_25749c34-22c9-44c8-8cd8-c5ce9d16a1c4","stage":"prompt","message":"Access denied. Please check your authentication. (Request ID: b6907c47-66a9-424a-b76d-a52b52c9e899) (code -32000): {\\"errorType\\":\\"AccessDeniedError\\",\\"retryErrorType\\":\\"CLIENT_ERROR\\",\\"requestId\\":\\"b6907c47-66a9-424a-b76d-a52b52c9e899\\"}"}}';
+const KIRO_CHUNKS = [
+  '{"type":"sessionUpdate","data":{"sessionId":"sess_d905aa86-3f2c-477d-b9b0-276507a52fab","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"car"},"_meta":{"kiro":{"replayId":"cd53cbe4-d97c-4f86-b94d-dfe10841f633-say"}}}}}',
+  '{"type":"sessionUpdate","data":{"sessionId":"sess_d905aa86-3f2c-477d-b9b0-276507a52fab","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"im"},"_meta":{"kiro":{"replayId":"cd53cbe4-d97c-4f86-b94d-dfe10841f633-say"}}}}}',
+  '{"type":"sessionUpdate","data":{"sessionId":"sess_d905aa86-3f2c-477d-b9b0-276507a52fab","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"bado"},"_meta":{"kiro":{"replayId":"cd53cbe4-d97c-4f86-b94d-dfe10841f633-say"}}}}}',
+  '{"type":"sessionUpdate","data":{"sessionId":"sess_d905aa86-3f2c-477d-b9b0-276507a52fab","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"\\n\\n<prom"},"_meta":{"kiro":{"replayId":"cd53cbe4-d97c-4f86-b94d-dfe10841f633-say"}}}}}',
+  '{"type":"sessionUpdate","data":{"sessionId":"sess_d905aa86-3f2c-477d-b9b0-276507a52fab","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"ise>CO"},"_meta":{"kiro":{"replayId":"cd53cbe4-d97c-4f86-b94d-dfe10841f633-say"}}}}}',
+  '{"type":"sessionUpdate","data":{"sessionId":"sess_d905aa86-3f2c-477d-b9b0-276507a52fab","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"MPLETE</promise"},"_meta":{"kiro":{"replayId":"cd53cbe4-d97c-4f86-b94d-dfe10841f633-say"}}}}}',
+  '{"type":"sessionUpdate","data":{"sessionId":"sess_d905aa86-3f2c-477d-b9b0-276507a52fab","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":">"},"_meta":{"kiro":{"replayId":"cd53cbe4-d97c-4f86-b94d-dfe10841f633-say"}}}}}',
+];
+const KIRO_SESSION = "sess_d905aa86-3f2c-477d-b9b0-276507a52fab";
+
 describe("kiro factory", () => {
   it("returns a provider with name 'kiro'", () => {
     const provider = kiro("auto");
     expect(provider.name).toBe("kiro");
   });
 
-  it("does not expose envManifest or dockerfileTemplate", () => {
+  it("does not expose envManifest, dockerfileTemplate or sessionStorage", () => {
     const provider = kiro("auto");
     expect(provider).not.toHaveProperty("envManifest");
     expect(provider).not.toHaveProperty("dockerfileTemplate");
+    expect(provider.sessionStorage).toBeUndefined();
   });
 
-  it("buildPrintCommand starts a non-interactive chat with the model", () => {
-    const provider = kiro("claude-sonnet-4-5");
-    const { command } = provider.buildPrintCommand(opts("do something"));
-    expect(command).toContain("kiro-cli chat --no-interactive");
-    expect(command).toContain("--model 'claude-sonnet-4-5'");
-  });
-
-  it("buildPrintCommand delivers prompt via argv, not stdin", () => {
-    const provider = kiro("auto");
-    const { command, stdin } = provider.buildPrintCommand(opts("hi there"));
-    expect(command).toContain("'hi there'");
-    expect(stdin).toBeUndefined();
-  });
-
-  it("buildPrintCommand shell-escapes the model and prompt", () => {
-    const provider = kiro("auto");
-    const { command } = provider.buildPrintCommand(opts("it's a test"));
-    expect(command).toContain("--model 'auto'");
-    expect(command).toContain("'it'\\''s a test'");
-  });
-
-  it("buildPrintCommand includes --trust-all-tools when dangerouslySkipPermissions is true", () => {
-    const provider = kiro("auto");
-    const { command } = provider.buildPrintCommand({
-      prompt: "test",
-      dangerouslySkipPermissions: true,
+  it("buildPrintCommand pins engine v3 with stream-json and delivers the prompt via stdin", () => {
+    const provider = kiro("claude-haiku-4.5");
+    const printCmd = provider.buildPrintCommand(opts("do something"));
+    expect(printCmd).toEqual({
+      command:
+        "kiro-cli chat --agent-engine v3 --output-format stream-json --trust-all-tools --model 'claude-haiku-4.5' 2>/tmp/kiro-cli.stderr.log",
+      stdin: "do something",
     });
-    expect(command).toContain("--trust-all-tools");
+  });
+
+  it("buildPrintCommand never puts the prompt in argv", () => {
+    const provider = kiro("auto");
+    const { command } = provider.buildPrintCommand(opts("secret prompt"));
+    expect(command).not.toContain("secret prompt");
+  });
+
+  it("buildPrintCommand redirects stderr to a log file so runError stays the error detail", () => {
+    const { command } = kiro("auto").buildPrintCommand(opts("x"));
+    expect(command.endsWith(" 2>/tmp/kiro-cli.stderr.log")).toBe(true);
+  });
+
+  it("buildPrintCommand shell-escapes model, agent, effort and resume id", () => {
+    const provider = kiro("it's", { agent: "rev'iewer", effort: "high" });
+    const { command } = provider.buildPrintCommand({
+      prompt: "p",
+      dangerouslySkipPermissions: true,
+      resumeSession: "sess_'x",
+    });
+    expect(command).toContain("--model 'it'\\''s'");
+    expect(command).toContain("--agent 'rev'\\''iewer'");
+    expect(command).toContain("--effort 'high'");
+    expect(command).toContain("--resume-id 'sess_'\\''x'");
+  });
+
+  it("buildPrintCommand emits all optional flags in order", () => {
+    const provider = kiro("claude-sonnet-5", {
+      effort: "xhigh",
+      agent: "coder",
+      requireMcpStartup: true,
+    });
+    const { command } = provider.buildPrintCommand({
+      prompt: "p",
+      dangerouslySkipPermissions: true,
+      resumeSession: KIRO_SESSION,
+    });
+    expect(command).toBe(
+      `kiro-cli chat --agent-engine v3 --output-format stream-json --trust-all-tools --model 'claude-sonnet-5' --effort 'xhigh' --agent 'coder' --require-mcp-startup --resume-id '${KIRO_SESSION}' 2>/tmp/kiro-cli.stderr.log`,
+    );
+  });
+
+  it("buildPrintCommand omits --effort, --agent, --require-mcp-startup and --resume-id by default", () => {
+    const { command } = kiro("auto").buildPrintCommand(opts("p"));
+    expect(command).not.toContain("--effort");
+    expect(command).not.toContain("--agent ");
+    expect(command).not.toContain("--require-mcp-startup");
+    expect(command).not.toContain("--resume-id");
+  });
+
+  it("buildPrintCommand throws on forkSession (kiro-cli has no fork)", () => {
+    expect(() =>
+      kiro("auto").buildPrintCommand({
+        prompt: "p",
+        dangerouslySkipPermissions: true,
+        resumeSession: KIRO_SESSION,
+        forkSession: true,
+      }),
+    ).toThrow(/does not support forkSession/);
   });
 
   it("buildPrintCommand omits --trust-all-tools when dangerouslySkipPermissions is false", () => {
-    const provider = kiro("auto");
-    const { command } = provider.buildPrintCommand({
+    const { command } = kiro("auto").buildPrintCommand({
       prompt: "test",
       dangerouslySkipPermissions: false,
     });
     expect(command).not.toContain("--trust-all-tools");
+    expect(command).not.toContain("--trust-tools");
   });
 
   it("buildPrintCommand emits --trust-tools=CSV when trustTools is set", () => {
@@ -2173,6 +2248,7 @@ describe("kiro factory", () => {
       dangerouslySkipPermissions: false,
     });
     expect(command).toContain("--trust-tools='fs_read,fs_write'");
+    expect(command).not.toContain("--trust-all-tools");
   });
 
   it("buildPrintCommand emits --trust-tools= for empty trustTools (trust none)", () => {
@@ -2194,53 +2270,6 @@ describe("kiro factory", () => {
     ).toThrow(/trustTools cannot be combined with dangerouslySkipPermissions/);
   });
 
-  it("buildPrintCommand emits --agent-engine when agentEngine is set", () => {
-    const provider = kiro("auto", { agentEngine: "kas" });
-    const { command } = provider.buildPrintCommand(opts("test"));
-    expect(command).toContain("--agent-engine 'kas'");
-  });
-
-  it("buildPrintCommand emits --mode when mode is set with agentEngine=kas", () => {
-    const provider = kiro("auto", { agentEngine: "kas", mode: "spec" });
-    const { command } = provider.buildPrintCommand(opts("test"));
-    expect(command).toContain("--agent-engine 'kas'");
-    expect(command).toContain("--mode 'spec'");
-  });
-
-  it("buildPrintCommand throws when mode is set without agentEngine=kas", () => {
-    const provider = kiro("auto", { mode: "spec" });
-    expect(() => provider.buildPrintCommand(opts("test"))).toThrow(
-      /mode requires agentEngine: 'kas'/,
-    );
-  });
-
-  it("buildPrintCommand throws when mode is set with agentEngine=v2", () => {
-    const provider = kiro("auto", { agentEngine: "v2", mode: "vibe" });
-    expect(() => provider.buildPrintCommand(opts("test"))).toThrow(
-      /mode requires agentEngine: 'kas'/,
-    );
-  });
-
-  it("buildPrintCommand emits --agent when agent profile is set", () => {
-    const provider = kiro("auto", { agent: "reviewer" });
-    const { command } = provider.buildPrintCommand(opts("test"));
-    expect(command).toContain("--agent 'reviewer'");
-  });
-
-  it("buildPrintCommand emits --require-mcp-startup when requested", () => {
-    const provider = kiro("auto", { requireMcpStartup: true });
-    const { command } = provider.buildPrintCommand(opts("test"));
-    expect(command).toContain("--require-mcp-startup");
-  });
-
-  it("buildPrintCommand throws when prompt exceeds 30 KiB", () => {
-    const provider = kiro("auto");
-    const huge = "x".repeat(31 * 1024);
-    expect(() => provider.buildPrintCommand(opts(huge))).toThrow(
-      /Kiro print-mode prompt is \d+ bytes/,
-    );
-  });
-
   it("buildPrintCommand bakes model into each provider instance independently", () => {
     const a = kiro("model-a");
     const b = kiro("model-b");
@@ -2258,29 +2287,41 @@ describe("kiro factory", () => {
     expect(kiro("auto").env).toEqual({});
   });
 
-  it("buildInteractiveArgs builds kiro-cli chat with model and prompt", () => {
-    const provider = kiro("auto");
-    const args = provider.buildInteractiveArgs!({
+  it("buildInteractiveArgs builds kiro-cli chat on engine v3 with model and prompt", () => {
+    const args = kiro("auto").buildInteractiveArgs!({
       prompt: "hello",
       dangerouslySkipPermissions: false,
     });
-    expect(args).toEqual(["kiro-cli", "chat", "--model", "auto", "hello"]);
+    expect(args).toEqual([
+      "kiro-cli",
+      "chat",
+      "--agent-engine",
+      "v3",
+      "--model",
+      "auto",
+      "hello",
+    ]);
   });
 
-  it("buildInteractiveArgs omits --no-interactive (interactive mode launches TUI)", () => {
-    const args = kiro("auto").buildInteractiveArgs!({
-      prompt: "",
-      dangerouslySkipPermissions: false,
-    });
-    expect(args).not.toContain("--no-interactive");
-  });
-
-  it("buildInteractiveArgs includes --trust-all-tools when requested", () => {
-    const args = kiro("auto").buildInteractiveArgs!({
+  it("buildInteractiveArgs includes effort, agent and --trust-all-tools when set", () => {
+    const args = kiro("claude-opus-5", { effort: "max", agent: "coder" })
+      .buildInteractiveArgs!({
       prompt: "",
       dangerouslySkipPermissions: true,
     });
-    expect(args).toContain("--trust-all-tools");
+    expect(args).toEqual([
+      "kiro-cli",
+      "chat",
+      "--agent-engine",
+      "v3",
+      "--model",
+      "claude-opus-5",
+      "--effort",
+      "max",
+      "--agent",
+      "coder",
+      "--trust-all-tools",
+    ]);
   });
 
   it("buildInteractiveArgs ignores trustTools (TTY prompts for approval)", () => {
@@ -2289,87 +2330,201 @@ describe("kiro factory", () => {
       prompt: "",
       dangerouslySkipPermissions: false,
     });
-    expect(args).not.toContain("--trust-tools");
     expect(args.some((a) => a.startsWith("--trust-tools"))).toBe(false);
   });
 
-  it("buildInteractiveArgs throws when mode is set without agentEngine=kas", () => {
-    const provider = kiro("auto", { mode: "spec" });
-    expect(() =>
-      provider.buildInteractiveArgs!({
-        prompt: "",
-        dangerouslySkipPermissions: false,
-      }),
-    ).toThrow(/mode requires agentEngine: 'kas'/);
+  it("parseStreamLine ignores runStarted", () => {
+    expect(kiro("auto").parseStreamLine(KIRO_RUN_STARTED)).toEqual([]);
   });
 
-  it("parseStreamLine emits text and result for '> ' prefixed lines", () => {
+  it("parseStreamLine maps an execute tool_call to Bash with the shell command", () => {
     const provider = kiro("auto");
-    expect(provider.parseStreamLine("> pong")).toEqual([
-      { type: "text", text: "pong" },
-      { type: "result", result: "pong" },
+    provider.parseStreamLine(KIRO_RUN_STARTED);
+    expect(provider.parseStreamLine(KIRO_TOOL_EXECUTE)).toEqual([
+      { type: "session_id", sessionId: KIRO_SESSION },
+      { type: "tool_call", name: "Bash", args: "ls -la" },
     ]);
   });
 
-  it("parseStreamLine strips ANSI before matching prefixes", () => {
+  it("parseStreamLine skips non-allowlisted tool calls (skill load, file write)", () => {
     const provider = kiro("auto");
-    const line = "\x1b[32m> hello\x1b[0m";
-    expect(provider.parseStreamLine(line)).toEqual([
-      { type: "text", text: "hello" },
-      { type: "result", result: "hello" },
+    provider.parseStreamLine(KIRO_TOOL_EXECUTE);
+    expect(provider.parseStreamLine(KIRO_TOOL_SKILL)).toEqual([]);
+    expect(provider.parseStreamLine(KIRO_TOOL_WRITE)).toEqual([]);
+  });
+
+  it("parseStreamLine maps a fetch tool_call to WebFetch with the url", () => {
+    const line = JSON.stringify({
+      type: "sessionUpdate",
+      data: {
+        sessionId: KIRO_SESSION,
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "t1",
+          title: "Fetch",
+          kind: "fetch",
+          rawInput: { url: "https://example.com" },
+        },
+      },
+    });
+    expect(kiro("auto").parseStreamLine(line)).toEqual([
+      { type: "session_id", sessionId: KIRO_SESSION },
+      { type: "tool_call", name: "WebFetch", args: "https://example.com" },
     ]);
   });
 
-  it("parseStreamLine skips the trust banner and resets accumulated result", () => {
+  it("parseStreamLine skips tool_call_update and session_info_update events", () => {
     const provider = kiro("auto");
-    expect(provider.parseStreamLine("> first")).toEqual([
-      { type: "text", text: "first" },
-      { type: "result", result: "first" },
-    ]);
-    expect(
-      provider.parseStreamLine(
-        "\x1b[32mAll tools are now trusted (\x1b[0m\x1b[31m!\x1b[0m\x1b[32m).\x1b[0m",
-      ),
-    ).toEqual([]);
-    // After banner, the buffer resets — next "> " line starts fresh
-    expect(provider.parseStreamLine("> second")).toEqual([
-      { type: "text", text: "second" },
-      { type: "result", result: "second" },
+    provider.parseStreamLine(KIRO_TOOL_EXECUTE);
+    expect(provider.parseStreamLine(KIRO_TOOL_UPDATE)).toEqual([]);
+    expect(provider.parseStreamLine(KIRO_TURN_COMPLETION)).toEqual([]);
+  });
+
+  it("parseStreamLine emits text deltas for agent_message_chunk and the completion signal survives", () => {
+    const provider = kiro("auto");
+    provider.parseStreamLine(KIRO_RUN_STARTED);
+    const events = KIRO_CHUNKS.flatMap((l) => provider.parseStreamLine(l));
+    expect(events[0]).toEqual({ type: "session_id", sessionId: KIRO_SESSION });
+    const text = events
+      .filter((e) => e.type === "text")
+      .map((e) => (e as { text: string }).text)
+      .join("");
+    expect(text).toBe("carimbado\n\n<promise>COMPLETE</promise>");
+  });
+
+  it("parseStreamLine maps runFinished.finalText to result", () => {
+    const provider = kiro("auto");
+    provider.parseStreamLine(KIRO_TOOL_EXECUTE);
+    expect(provider.parseStreamLine(KIRO_RUN_FINISHED)).toEqual([
+      { type: "result", result: "carimbado\n\n<promise>COMPLETE</promise>" },
     ]);
   });
 
-  it("parseStreamLine skips Kiro banner companions and footer", () => {
+  it("parseStreamLine falls back to streamed text when finalText is truncated", () => {
     const provider = kiro("auto");
-    expect(
-      provider.parseStreamLine("Agents can sometimes do unexpected things"),
-    ).toEqual([]);
-    expect(provider.parseStreamLine("Learn more at https://kiro.dev/")).toEqual(
-      [],
+    provider.parseStreamLine(KIRO_RUN_STARTED);
+    provider.parseStreamLine(KIRO_TOOL_EXECUTE);
+    for (const l of KIRO_CHUNKS) provider.parseStreamLine(l);
+    const truncated = JSON.stringify({
+      type: "runFinished",
+      data: {
+        sessionId: KIRO_SESSION,
+        status: "success",
+        stopReason: "end_turn",
+        finalText: "carim",
+        finalTextTruncated: true,
+      },
+    });
+    expect(provider.parseStreamLine(truncated)).toEqual([
+      { type: "result", result: "carimbado\n\n<promise>COMPLETE</promise>" },
+    ]);
+  });
+
+  it("parseStreamLine maps an invalid-model runError to result", () => {
+    const provider = kiro("modelo-inexistente");
+    provider.parseStreamLine(KIRO_RUN_STARTED);
+    expect(provider.parseStreamLine(KIRO_BADMODEL_DISPLAYERR)).toEqual([
+      {
+        type: "session_id",
+        sessionId: "sess_ae12526a-66ff-45e3-8f41-642a4ca3700c",
+      },
+    ]);
+    const events = provider.parseStreamLine(KIRO_BADMODEL_ERR);
+    expect(events).toHaveLength(1);
+    expect(events[0]!.type).toBe("result");
+    const result = (events[0] as { result: string }).result;
+    expect(result).toMatch(
+      /^The model 'modelo-inexistente' is not available\./,
     );
-    expect(provider.parseStreamLine(" ▸ Credits: 0.02 • Time: 2s")).toEqual([]);
+    expect(result).toContain('"errorType":"InvalidModelError"');
   });
 
-  it("parseStreamLine accumulates multi-line assistant text in the result buffer", () => {
+  it("parseStreamLine maps a credential runError to result (session id on first sight)", () => {
     const provider = kiro("auto");
-    provider.parseStreamLine("> line one");
-    const second = provider.parseStreamLine("> line two");
-    expect(second).toEqual([
-      { type: "text", text: "line two" },
-      { type: "result", result: "line one\nline two" },
+    const events = provider.parseStreamLine(KIRO_BADKEY_ERR);
+    expect(events[0]).toEqual({
+      type: "session_id",
+      sessionId: "sess_25749c34-22c9-44c8-8cd8-c5ce9d16a1c4",
+    });
+    expect(events[1]!.type).toBe("result");
+    expect((events[1] as { result: string }).result).toMatch(
+      /^Access denied\. Please check your authentication\..*"errorType":"AccessDeniedError"/,
+    );
+  });
+
+  it("parseStreamLine surfaces usage-limit and throttling runError messages", () => {
+    const line = JSON.stringify({
+      type: "runError",
+      data: {
+        sessionId: KIRO_SESSION,
+        stage: "prompt",
+        message:
+          'Too many requests, please wait before trying again. (code -32000): {"errorType":"ServiceThrottleError","retryErrorType":"THROTTLING","requestId":"r1"}',
+      },
+    });
+    const events = kiro("auto").parseStreamLine(line);
+    expect(events.at(-1)).toEqual({
+      type: "result",
+      result:
+        'Too many requests, please wait before trying again. (code -32000): {"errorType":"ServiceThrottleError","retryErrorType":"THROTTLING","requestId":"r1"}',
+    });
+  });
+
+  it("parseStreamLine emits session_id once per run and again after runStarted", () => {
+    const provider = kiro("auto");
+    provider.parseStreamLine(KIRO_RUN_STARTED);
+    expect(provider.parseStreamLine(KIRO_TOOL_EXECUTE)[0]).toEqual({
+      type: "session_id",
+      sessionId: KIRO_SESSION,
+    });
+    expect(
+      provider
+        .parseStreamLine(KIRO_TOOL_UPDATE)
+        .some((e) => e.type === "session_id"),
+    ).toBe(false);
+    expect(
+      provider
+        .parseStreamLine(KIRO_RUN_FINISHED)
+        .some((e) => e.type === "session_id"),
+    ).toBe(false);
+    // Next run on the same instance (e.g. resume of the same session).
+    provider.parseStreamLine(KIRO_RUN_STARTED);
+    expect(provider.parseStreamLine(KIRO_TOOL_UPDATE)).toEqual([
+      { type: "session_id", sessionId: KIRO_SESSION },
     ]);
   });
 
-  it("parseStreamLine returns empty array for blank lines", () => {
+  it("parseStreamLine returns [] for non-JSON, malformed and unknown lines", () => {
     const provider = kiro("auto");
     expect(provider.parseStreamLine("")).toEqual([]);
-    expect(provider.parseStreamLine("   ")).toEqual([]);
+    expect(
+      provider.parseStreamLine("[INFO] kas: acp.remote_sessions.enabled"),
+    ).toEqual([]);
+    expect(provider.parseStreamLine("{not json")).toEqual([]);
+    expect(provider.parseStreamLine('{"type":"somethingNew"}')).toEqual([]);
   });
 
-  it("parseStreamLine surfaces unknown content as text without folding into result", () => {
+  it("parses the captured v3 run end to end", () => {
     const provider = kiro("auto");
-    provider.parseStreamLine("> seed");
-    const events = provider.parseStreamLine("some unrecognised noise");
-    expect(events).toEqual([{ type: "text", text: "some unrecognised noise" }]);
+    const lines = [
+      KIRO_RUN_STARTED,
+      KIRO_TOOL_EXECUTE,
+      KIRO_TOOL_UPDATE,
+      KIRO_TOOL_SKILL,
+      KIRO_TOOL_WRITE,
+      ...KIRO_CHUNKS,
+      KIRO_TURN_COMPLETION,
+      KIRO_RUN_FINISHED,
+    ];
+    const events = lines.flatMap((l) => provider.parseStreamLine(l));
+    expect(events.filter((e) => e.type === "session_id")).toHaveLength(1);
+    expect(events.filter((e) => e.type === "tool_call")).toEqual([
+      { type: "tool_call", name: "Bash", args: "ls -la" },
+    ]);
+    expect(events.at(-1)).toEqual({
+      type: "result",
+      result: "carimbado\n\n<promise>COMPLETE</promise>",
+    });
   });
 });
 

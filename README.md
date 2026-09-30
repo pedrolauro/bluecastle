@@ -1002,38 +1002,35 @@ agent: pi("claude-sonnet-4-6", { thinking: "high" });
 The `kiro()` factory accepts an optional second argument for provider-specific options:
 
 ```typescript
-agent: kiro("auto", { agentEngine: "kas", mode: "spec" });
+agent: kiro("claude-sonnet-5", { effort: "high" });
 ```
 
-| Option              | Type                        | Default | Description                                                                                                                                 |
-| ------------------- | --------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `env`               | `Record<string, string>`    | `{}`    | Environment variables injected by this agent provider. Usually unnecessary — supply `KIRO_API_KEY` via `.sandcastle/.env`.                  |
-| `agentEngine`       | `"v1"` \| `"v2"` \| `"kas"` | —       | Kiro agent engine (`--agent-engine`). Pass `kas` to enable the KAS agent (required to use `mode`).                                          |
-| `mode`              | `"vibe"` \| `"spec"`        | —       | KAS-only mode (`--mode`). Combining `mode` with any engine other than `kas` throws at command-build time.                                   |
-| `agent`             | `string`                    | —       | Kiro context profile to use (`--agent`).                                                                                                    |
-| `trustTools`        | `readonly string[]`         | —       | Restrict tool auto-approval to this allowlist (e.g. `["fs_read", "fs_write"]`). Cannot be combined with `dangerouslySkipPermissions: true`. |
-| `requireMcpStartup` | `boolean`                   | `false` | Require all enabled MCP servers to start successfully; Kiro exits with code 3 if any fail.                                                  |
+| Option              | Type                                                      | Default | Description                                                                                                                                 |
+| ------------------- | --------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `effort`            | `"low"` \| `"medium"` \| `"high"` \| `"xhigh"` \| `"max"` | —       | Reasoning effort (`--effort`).                                                                                                              |
+| `env`               | `Record<string, string>`                                  | `{}`    | Environment variables injected by this agent provider. Usually unnecessary — supply `KIRO_API_KEY` via `.sandcastle/.env`.                  |
+| `agent`             | `string`                                                  | —       | Kiro agent profile to use (`--agent`).                                                                                                      |
+| `trustTools`        | `readonly string[]`                                       | —       | Restrict tool auto-approval to this allowlist (e.g. `["fs_read", "fs_write"]`). Cannot be combined with `dangerouslySkipPermissions: true`. |
+| `requireMcpStartup` | `boolean`                                                 | `false` | Require all enabled MCP servers to start successfully; Kiro exits with code 3 if any fail.                                                  |
 
-**Model IDs** accepted by the `model` argument (per Kiro's [models reference](https://kiro.dev/docs/cli/models)):
+Sandcastle runs Kiro as:
 
-- `auto` (Kiro's model router — recommended for general work)
-- `claude-opus-4.7`, `claude-opus-4.6`, `claude-opus-4.5`
-- `claude-sonnet-4.6`, `claude-sonnet-4.5`, `claude-sonnet-4.0`
-- `claude-haiku-4.5`
-- `deepseek-3.2`
-- `minimax-m2.5`, `minimax-m2.1`
-- `glm-5`
-- `qwen3-coder-next`
+```bash
+kiro-cli chat --agent-engine v3 --output-format stream-json --trust-all-tools \
+  --model '<model>' [--effort <effort>] [--agent <agent>] [--require-mcp-startup] \
+  [--resume-id '<session>'] 2>/tmp/kiro-cli.stderr.log   # prompt on stdin
+```
 
-Note: Kiro's Claude model IDs use dots (`claude-opus-4.7`), unlike `claudeCode()`'s dashed form (`claude-opus-4-7`). Run `kiro-cli chat --list-models --format json` for the canonical list against your installed CLI.
+The engine is pinned to `v3`: Kiro's default engine (`v2`) silently ignores `--model` and `--effort`. The stream-json output (JSON Lines) is mapped as follows: `agent_message_chunk` → text deltas, `tool_call` with kind `execute` → `Bash` tool call (kind `fetch` → `WebFetch`), the first `sessionId` of a run → session id, `runFinished.finalText` → result, and `runError.message` → result (so auth, invalid-model, usage-limit and throttling errors surface as the error detail).
+
+**Model IDs**: run `kiro-cli chat --list-models --format json` for the canonical list against your installed CLI. `auto` is Kiro's model router. Kiro's Claude model IDs use dots (`claude-opus-5.5`, `claude-haiku-4.5`), unlike `claudeCode()`'s dashed form (`claude-opus-5-5`). With engine `v3` an unknown model fails the run (`InvalidModelError`, exit 1).
 
 **Gotchas:**
 
 - Requires a Kiro Pro, Pro+, or Power subscription (see [Kiro headless docs](https://kiro.dev/docs/cli/headless/)).
 - `KIRO_API_KEY` flows via `.sandcastle/.env` like every other provider — you do not need to pass it through `options.env`.
-- **Resume is not supported** for this provider in this release. `kiro-cli` only persists sessions in interactive mode (observed 2026-05-27); headless runs are stateless and `--resume-id` therefore has nothing to resume from.
-- Kiro's headless stdout is plain text with ANSI decorations rather than structured JSON, so Sandcastle's stream parser is heuristic — Kiro CLI releases that reshape the `> ` prefix or the `▸ Credits:` footer can silently regress text/result extraction. File an issue if you see noise in `result`.
-- Kiro does not expose a reasoning-effort flag analogous to Claude Code / Codex / Copilot — `KiroOptions` therefore has no `effort` field.
+- Kiro's stderr is redirected to `/tmp/kiro-cli.stderr.log` inside the sandbox. Engine `v3` always logs `[INFO]`/`[ERROR]` lines there, and Sandcastle would otherwise prefer that noise over the clean `runError` message on a non-zero exit. Read the file in the sandbox when debugging.
+- **Resume is limited.** Kiro keeps sessions in `~/.kiro` inside the sandbox, so the provider has no `sessionStorage` and `captureSessions` is `false`: `run({ resumeSession })` and `result.resume()` are not available. `buildPrintCommand` does honour `resumeSession` (`--resume-id`) for callers that re-run in the same live container. `forkSession` throws.
 
 ### Provider `env`
 

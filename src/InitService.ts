@@ -505,7 +505,7 @@ OPENCODE_API_KEY=`,
     envExample: `# Kiro API key (requires Kiro Pro, Pro+, or Power subscription).
 # Headless runs read this from the environment; see https://kiro.dev/docs/cli/headless/
 KIRO_API_KEY=`,
-    setupCommand: `kiro-cli chat --no-interactive --trust-all-tools "$(cat ${SETUP_ISSUE_TRACKER_PATH})"`,
+    setupCommand: `kiro-cli chat --agent-engine v3 "$(cat ${SETUP_ISSUE_TRACKER_PATH})"`,
   },
   {
     name: "copilot",
